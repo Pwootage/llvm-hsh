@@ -3706,7 +3706,7 @@ public:
           assert(TextureSearch != Textures.end());
           BindingSearch = SamplerBindings.insert(
               SamplerBindings.end(),
-              SamplerBinding{RecordIdx, TextureSearch - Textures.begin(), PVD,
+              SamplerBinding{RecordIdx, static_cast<unsigned int>(TextureSearch - Textures.begin()), PVD,
                              1u << Stage});
         } else {
           BindingSearch->UseStages |= 1u << Stage;
@@ -3759,7 +3759,7 @@ public:
     auto ProcessField = [&]() {
       Offset = Offset.alignTo(FieldAlign);
       VertexAttributes.push_back(
-          VertexAttribute{Offset.getQuantity(), Binding, Format});
+          VertexAttribute{static_cast<uint32_t>(Offset.getQuantity()), Binding, Format});
       Offset += FieldSize;
     };
     if (HshBuiltins::isMatrixType(HBT)) {
@@ -3798,7 +3798,7 @@ public:
     auto Size = Context.getTypeSizeInChars(Type);
     auto Align = Context.getTypeAlignInChars(Type);
     auto SizeOf = Size.alignTo(Align).getQuantity();
-    VertexBindings.push_back(VertexBinding{Binding, SizeOf, Attribute.Kind});
+    VertexBindings.push_back(VertexBinding{Binding, static_cast<uint32_t>(SizeOf), Attribute.Kind});
     registerAttributeFields(Attribute.Record, Binding);
   }
 

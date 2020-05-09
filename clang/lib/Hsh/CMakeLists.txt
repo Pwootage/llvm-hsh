@@ -4,13 +4,20 @@ include(ExternalProject)
 set(lib_destination "${LLVM_LIBRARY_OUTPUT_INTDIR}/clang-hsh/${CLANG_VERSION}")
 set(lib_install_destination "lib${LLVM_LIBDIR_SUFFIX}/clang-hsh/${CLANG_VERSION}")
 
-if(CMAKE_HOST_UNIX)
+if(APPLE)
+  set(DX_LIBRARY_NAME libdxcompiler.3.7${CMAKE_SHARED_LIBRARY_SUFFIX})
   set(LINK_OR_COPY create_symlink
-          libdxcompiler${CMAKE_SHARED_LIBRARY_SUFFIX}.3.7
+          "${DX_LIBRARY_NAME}"
+          "${lib_destination}/libdxcompiler${CMAKE_SHARED_LIBRARY_SUFFIX}")
+elseif(CMAKE_HOST_UNIX)
+  set(DX_LIBRARY_NAME libdxcompiler${CMAKE_SHARED_LIBRARY_SUFFIX}.3.7)
+  set(LINK_OR_COPY create_symlink
+          "${DX_LIBRARY_NAME}"
           "${lib_destination}/libdxcompiler${CMAKE_SHARED_LIBRARY_SUFFIX}")
 else()
+  set(DX_LIBRARY_NAME libdxcompiler${CMAKE_SHARED_LIBRARY_SUFFIX}.3.7)
   set(LINK_OR_COPY copy
-          "${lib_destination}/libdxcompiler${CMAKE_SHARED_LIBRARY_SUFFIX}.3.7"
+          "${lib_destination}/${DX_LIBRARY_NAME}"
           "${lib_destination}/libdxcompiler${CMAKE_SHARED_LIBRARY_SUFFIX}")
 endif()
 
@@ -30,7 +37,7 @@ ExternalProject_Add(
         "${CMAKE_COMMAND}" -E copy ../DirectXShaderCompiler/include/dxc/Support/WinAdapter.h
         "${CLANG_BINARY_DIR}/include/dxc/Support/WinAdapter.h"
         COMMAND
-        "${CMAKE_COMMAND}" -E copy lib/libdxcompiler${CMAKE_SHARED_LIBRARY_SUFFIX}.3.7 "${lib_destination}"
+        "${CMAKE_COMMAND}" -E copy lib/${DX_LIBRARY_NAME} "${lib_destination}"
         COMMAND
         "${CMAKE_COMMAND}" -E ${LINK_OR_COPY}
         CMAKE_CACHE_ARGS
@@ -130,7 +137,7 @@ set_target_properties(DirectXShaderCompiler-libs PROPERTIES
 
 install(FILES
         "${lib_destination}/libdxcompiler${CMAKE_SHARED_LIBRARY_SUFFIX}"
-        "${lib_destination}/libdxcompiler${CMAKE_SHARED_LIBRARY_SUFFIX}.3.7"
+        "${lib_destination}/${DX_LIBRARY_NAME}"
         COMPONENT DirectXShaderCompiler-libs
         DESTINATION "${lib_install_destination}")
 
