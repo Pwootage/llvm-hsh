@@ -115,6 +115,20 @@ function(target_hsh target)
   target_link_libraries(${target} PUBLIC hsh)
   set(inc_prop "$<TARGET_PROPERTY:${target},INCLUDE_DIRECTORIES>")
   set(def_prop "$<TARGET_PROPERTY:${target},COMPILE_DEFINITIONS>")
+  if (APPLE)
+    get_filename_component(COMPILER_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    if (NOT EXISTS "${CMAKE_OSX_SYSROOT}")
+      message(FATAL_ERROR "CMAKE_OSX_SYSROOT not set")
+    endif()
+    set(sysroot_prop
+            -isysroot ${CMAKE_OSX_SYSROOT}
+            -isystem ${COMPILER_DIR}/../include
+            -isystem ${COMPILER_DIR}/../include/c++/v1
+#            -isystem "/usr/local/include/c++/9.3.0"
+            )
+  else()
+    set(sysroot_prop "")
+  endif()
 
   # Process each source of target
   get_target_property(bin_dir ${target} BINARY_DIR)
@@ -167,10 +181,12 @@ function(target_hsh target)
     # Hshgen rule here
     add_custom_command(OUTPUT "${out_path}.hshhead" COMMAND "$<TARGET_FILE:hshgen>"
             "$<$<CONFIG:Debug>:-g>"
+            "${sysroot_prop}"
             "$<$<BOOL:${inc_prop}>:-I$<JOIN:${inc_prop},;-I>>"
             "$<$<BOOL:${def_prop}>:-D$<JOIN:${def_prop},;-D>>"
             ARGS ${_hsh_args} "${src_path}" "${out_rel}.hshhead"
             -MD -MT "${out_rel}.hshhead" -MF "${out_rel}.hshhead.d" "-hsh-profile=${use_prof}"
+            "-v"
             DEPENDS hshgen "${src_path}" "${use_prof}" IMPLICIT_DEPENDS CXX "${src_path}"
             ${depfile_args} WORKING_DIRECTORY "${CMAKE_BINARY_DIR}" COMMAND_EXPAND_LISTS)
 

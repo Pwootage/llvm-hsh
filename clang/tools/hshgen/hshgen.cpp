@@ -80,6 +80,16 @@ int main(int argc, const char **argv) {
       cl::desc("Add directory to include search path"),
       cl::cat(llvm::cl::GeneralCategory));
 
+  static cl::list<std::string, bool, cl::dir_parser> IsysrootDirs(
+      "isysroot", cl::ZeroOrMore, cl::Prefix,
+      cl::desc("Set the system root"),
+      cl::cat(llvm::cl::GeneralCategory));
+
+  static cl::list<std::string, bool, cl::dir_parser> IsystemDirs(
+      "isystem", cl::ZeroOrMore, cl::Prefix,
+      cl::desc("Add directory to SYSTEM include search path"),
+      cl::cat(llvm::cl::GeneralCategory));
+
   static cl::list<std::string, bool, cl::def_parser> CompileDefs(
       "D", cl::ZeroOrMore, cl::Prefix,
       cl::desc("Define <macro> to <value> (or 1 if <value> omitted)"),
@@ -128,6 +138,7 @@ int main(int argc, const char **argv) {
   };
   static TargetOption HshTargets[] = {
       {hshgen::HT_GLSL, "GLSL Source Target"},
+      {hshgen::HT_SOFTREND, "Softrend Source Target"},
       {hshgen::HT_HLSL, "HLSL Source Target"},
       {hshgen::HT_DXBC, "DXBC Binary Target (requires d3dcompiler.dll)"},
       {hshgen::HT_DXIL, "DXIL Binary Target (requires dxcompiler.dll)"},
@@ -160,6 +171,14 @@ int main(int argc, const char **argv) {
     args.emplace_back("-fcolor-diagnostics");
   for (const auto &Dir : IncludeDirs) {
     args.emplace_back("-I");
+    args.push_back(Dir);
+  }
+  for (const auto &Dir : IsysrootDirs) {
+    args.emplace_back("-isysroot");
+    args.push_back(Dir);
+  }
+  for (const auto &Dir : IsystemDirs) {
+    args.emplace_back("-isystem");
     args.push_back(Dir);
   }
   for (const auto &Def : CompileDefs) {

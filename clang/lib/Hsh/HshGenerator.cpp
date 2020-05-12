@@ -2309,6 +2309,10 @@ template <>
 constexpr StringRef HshBuiltins::getSpelling<HT_METAL>(HshBuiltinType Tp) {
   return getSpellings(Tp).Metal;
 }
+template <>
+constexpr StringRef HshBuiltins::getSpelling<HT_SOFTREND>(HshBuiltinType Tp) {
+  return getSpellings(Tp).GLSL;
+}
 
 template <>
 constexpr StringRef HshBuiltins::getSpelling<HT_GLSL>(HshBuiltinFunction Func) {
@@ -2322,6 +2326,10 @@ template <>
 constexpr StringRef
 HshBuiltins::getSpelling<HT_METAL>(HshBuiltinFunction Func) {
   return getSpellings(Func).Metal;
+}
+template <>
+constexpr StringRef HshBuiltins::getSpelling<HT_SOFTREND>(HshBuiltinFunction Func) {
+  return getSpellings(Func).GLSL;
 }
 
 struct SamplerRecord {
@@ -3436,6 +3444,237 @@ struct HLSLPrintingPolicy : ShaderPrintingPolicy<HLSLPrintingPolicy> {
   }
 };
 
+struct SoftRendPrintingPolicy : ShaderPrintingPolicy<SoftRendPrintingPolicy> {
+  static constexpr HshTarget SourceTarget = HT_SOFTREND;
+  static constexpr bool NoUniformVarDecl = true;
+  static constexpr llvm::StringLiteral SignedInt32Spelling{"int"};
+  static constexpr llvm::StringLiteral UnsignedInt32Spelling{"uint"};
+  static constexpr llvm::StringLiteral Float32Spelling{"float"};
+  static constexpr llvm::StringLiteral Float64Spelling{"double"};
+  static constexpr llvm::StringLiteral VertexBufferBase{""};
+
+  static constexpr StringRef identifierOfVertexPosition(FieldDecl *FD) {
+    return "gl_Position"_ll;
+  }
+
+  static constexpr StringRef identifierOfColorAttachment(FieldDecl *FD) {
+    return "_color_out"_ll;
+  }
+
+  static constexpr StringRef identifierOfCXXMethod(HshBuiltinCXXMethod HBM,
+                                                   CXXMemberCallExpr *C) {
+    switch (HBM) {
+    case HBM_sample2d:
+    case HBM_render_sample2d:
+    case HBM_sample_bias2d:
+      return "texture"_ll;
+    default:
+      return {};
+    }
+  }
+
+  static constexpr bool
+  overrideCXXMethodArguments(HshBuiltinCXXMethod HBM, CXXMemberCallExpr *C,
+                             const std::function<void(StringRef)> &StringArg,
+                             const std::function<void(Expr *)> &ExprArg) {
+    switch (HBM) {
+    case HBM_sample2d:
+    case HBM_render_sample2d:
+    case HBM_sample_bias2d: {
+      ExprArg(C->getImplicitObjectArgument()->IgnoreParenImpCasts());
+      ExprArg(C->getArg(0));
+      if (HBM == HBM_sample_bias2d)
+        ExprArg(C->getArg(1));
+      return true;
+    }
+    default:
+      return false;
+    }
+  }
+
+  bool overrideCXXOperatorCall(
+      CXXOperatorCallExpr *C, raw_ostream &OS,
+      const std::function<void(Expr *)> &ExprArg) const override {
+    if (C->getNumArgs() == 1) {
+      if (C->getOperator() == OO_Star) {
+        /* Ignore derefs */
+        ExprArg(C->getArg(0));
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool overrideCXXTemporaryObjectExpr(
+      CXXTemporaryObjectExpr *C, raw_ostream &OS,
+      const std::function<void(Expr *)> &ExprArg) const override {
+    auto DTp = Builtins.identifyBuiltinType(C->getType());
+    if (HshBuiltins::isVectorType(DTp)) {
+      if (C->getNumArgs() == 0) {
+        /* Implicit zero vector construction */
+        OS << HshBuiltins::getSpelling<SourceTarget>(DTp) << '(';
+        PrintNZeros(OS, HshBuiltins::getVectorSize(DTp));
+        OS << ')';
+        return true;
+      } else if (C->getNumArgs() == 1 &&
+                 !HshBuiltins::isVectorType(
+                     Builtins.identifyBuiltinType(C->getArg(0)->getType()))) {
+        /* Implicit scalar-to-vector conversion */
+        OS << HshBuiltins::getSpelling<SourceTarget>(DTp) << '(';
+        PrintNExprs(OS, ExprArg, HshBuiltins::getVectorSize(DTp), C->getArg(0));
+        OS << ')';
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static void PrintBeforePackoffset(raw_ostream &OS, CharUnits Offset) {
+    OS.indent(2) << "layout(offset = " << Offset.getQuantity() << ")\n";
+  }
+
+  static void PrintAfterPackoffset(raw_ostream &OS, CharUnits Offset) {
+    OS << ";\n";
+  }
+
+  void PrintAttributeFieldSpelling(raw_ostream &OS, QualType Tp,
+                                   const Twine &FieldName, unsigned Location,
+                                   unsigned Indent) const {
+    OS << "layout(location = " << Location << ") in ";
+    Tp.print(OS, *this);
+    OS << " " << FieldName << ";\n";
+  }
+
+  static constexpr llvm::StringLiteral GLSLRuntimeSupport{
+      R"(#version 450 core
+float saturate(float val) {
+  return clamp(val, 0.0, 1.0);
+}
+vec2 saturate(vec2 val) {
+  return clamp(val, vec2(0.0, 0.0), vec2(1.0, 1.0));
+}
+vec3 saturate(vec3 val) {
+  return clamp(val, vec3(0.0, 0.0, 0.0), vec3(1.0, 1.0, 1.0));
+}
+vec4 saturate(vec4 val) {
+  return clamp(val, vec4(0.0, 0.0, 0.0, 0.0), vec4(1.0, 1.0, 1.0, 1.0));
+}
+)"};
+
+  void printStage(raw_ostream &OS, ASTContext &Context,
+                  ArrayRef<FunctionRecord> FunctionRecords,
+                  ArrayRef<UniformRecord> UniformRecords,
+                  CXXRecordDecl *FromRecord, CXXRecordDecl *ToRecord,
+                  ArrayRef<AttributeRecord> Attributes,
+                  ArrayRef<TextureRecord> Textures,
+                  ArrayRef<SamplerBinding> Samplers,
+                  unsigned NumColorAttachments, CompoundStmt *Stmts,
+                  HshStage Stage, HshStage From, HshStage To,
+                  ArrayRef<SampleCall> SampleCalls) override {
+    OS << GLSLRuntimeSupport;
+
+    auto PrintFunction = [&](const FunctionDecl *FD) {
+      SuppressSpecifiers = false;
+      FD->getReturnType().print(OS, *this);
+      OS << ' ';
+      SuppressSpecifiers = true;
+      FD->print(OS, *this);
+    };
+    bool OldTerseOutput = TerseOutput;
+    TerseOutput = true;
+    bool OldSuppressSpecifiers = SuppressSpecifiers;
+    for (auto &Function : FunctionRecords) {
+      if ((1u << Stage) & Function.UseStages) {
+        PrintFunction(Function.Function);
+        OS << ";\n";
+      }
+    }
+    TerseOutput = false;
+    for (auto &Function : FunctionRecords) {
+      if ((1u << Stage) & Function.UseStages) {
+        PrintFunction(Function.Function);
+      }
+    }
+    TerseOutput = OldTerseOutput;
+    SuppressSpecifiers = OldSuppressSpecifiers;
+
+    NestedRecords.clear();
+    for (auto &Record : UniformRecords) {
+      if ((1u << Stage) & Record.UseStages)
+        GatherNestedPackoffsetFields(Context, Record.Record);
+    }
+
+    PrintNestedStructs(OS, Context);
+
+    unsigned Binding = 0;
+    for (auto &Record : UniformRecords) {
+      if ((1u << Stage) & Record.UseStages) {
+        OS << "layout(std140, binding = " << Binding << ") uniform b" << Binding
+           << '_' << Record.Record->getName() << " {\n";
+        PrintPackoffsetFields(OS, Context, Record.Record, Record.Name);
+        OS << "};\n";
+      }
+      ++Binding;
+    }
+
+    if (FromRecord && !FromRecord->fields().empty()) {
+      OS << "in " << HshStageToString(From) << "_to_" << HshStageToString(Stage)
+         << " {\n";
+      for (auto *FD : FromRecord->fields()) {
+        OS << "  ";
+        FD->print(OS, *this, 1);
+        OS << ";\n";
+      }
+      OS << "} _from_" << HshStageToString(From) << ";\n";
+    }
+
+    if (ToRecord && !ToRecord->fields().empty()) {
+      OS << "out " << HshStageToString(Stage) << "_to_" << HshStageToString(To)
+         << " {\n";
+      for (auto *FD : ToRecord->fields()) {
+        OS << "  ";
+        FD->print(OS, *this, 1);
+        OS << ";\n";
+      }
+      OS << "} _to_" << HshStageToString(To) << ";\n";
+    }
+
+    if (Stage == HshVertexStage) {
+      uint32_t Location = 0;
+      for (const auto &Attribute : Attributes) {
+        for (const auto *FD : Attribute.Record->fields()) {
+          QualType Tp = FD->getType().getUnqualifiedType();
+          Twine Tw1 = Twine(Attribute.Name) + Twine('_');
+          PrintAttributeField(OS, Context, Tp, Tw1 + FD->getName(),
+                              ArrayWaitType::NoArray, 0, Location, 1);
+        }
+      }
+    }
+
+    uint32_t TexBinding = 0;
+    for (const auto &Tex : Textures) {
+      if ((1u << Stage) & Tex.UseStages)
+        OS << "layout(binding = " << TexBinding << ") uniform "
+           << HshBuiltins::getSpelling<SourceTarget>(
+               BuiltinTypeOfTexture(Tex.Kind))
+           << " " << Tex.TexParm->getName() << ";\n";
+      ++TexBinding;
+    }
+
+    if (Stage == HshFragmentStage) {
+      OS << "layout(location = 0) out vec4 _color_out[" << NumColorAttachments
+         << "];\n";
+      if (EarlyDepthStencil)
+        OS << "layout(early_fragment_tests) in;\n";
+    }
+
+    OS << "void main() ";
+    Stmts->printPretty(OS, nullptr, *this);
+  }
+
+  using ShaderPrintingPolicy<SoftRendPrintingPolicy>::ShaderPrintingPolicy;
+};
+
 std::unique_ptr<ShaderPrintingPolicyBase>
 MakePrintingPolicy(HshBuiltins &Builtins, HshTarget Target,
                    InShaderPipelineArgsType InShaderPipelineArgs) {
@@ -3454,6 +3693,9 @@ MakePrintingPolicy(HshBuiltins &Builtins, HshTarget Target,
   case HT_METAL_BIN_IOS:
   case HT_METAL_BIN_TVOS:
     return std::make_unique<HLSLPrintingPolicy>(Builtins, Target,
+                                                InShaderPipelineArgs);
+  case HT_SOFTREND:
+    return std::make_unique<SoftRendPrintingPolicy>(Builtins, Target,
                                                 InShaderPipelineArgs);
   }
 }
@@ -4356,6 +4598,7 @@ MakeCompiler(HshTarget Target, bool DebugInfo, StringRef ResourceDir,
              DiagnosticsEngine &Diags, HshBuiltins &Builtins) {
   switch (Target) {
   default:
+  case HT_SOFTREND:
   case HT_GLSL:
   case HT_HLSL:
     return std::make_unique<StagesCompilerText>(Target);

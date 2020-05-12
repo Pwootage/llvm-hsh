@@ -25,6 +25,7 @@ enum HshTarget : int {
   HT_METAL_BIN_IOS,
   HT_METAL_BIN_TVOS,
   HT_DEKO3D,
+  HT_SOFTREND,
   HT_MAX
 };
 
@@ -53,6 +54,8 @@ constexpr StringRef HshTargetToString(HshTarget Target) {
     return llvm::StringLiteral("metal-bin-tvos");
   case HT_DEKO3D:
     return llvm::StringLiteral("deko3d");
+  case HT_SOFTREND:
+    return llvm::StringLiteral("softrend");
   }
 }
 
