@@ -1166,6 +1166,9 @@ private:
     }
 
     bool VisitNamespaceDecl(NamespaceDecl *Namespace) {
+      if (Namespace->isInline()) {
+        return VisitDecl(Namespace);
+      }
       if (InMainNS) {
         if (SubNS.empty())
           return true;
