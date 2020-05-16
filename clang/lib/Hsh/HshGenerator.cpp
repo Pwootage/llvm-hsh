@@ -98,7 +98,7 @@ template <> struct DenseMapInfo<clang::hshgen::HshTarget> {
 
 } // end namespace llvm
 
-namespace {
+namespace clang::hshgen {
 
 using namespace llvm;
 using namespace clang;
@@ -2179,7 +2179,8 @@ HshBuiltins::getSpelling<HT_METAL>(HshBuiltinFunction Func) {
   return getSpellings(Func).Metal;
 }
 template <>
-constexpr StringRef HshBuiltins::getSpelling<HT_SOFTREND>(HshBuiltinFunction Func) {
+constexpr StringRef
+HshBuiltins::getSpelling<HT_SOFTREND>(HshBuiltinFunction Func) {
   return getSpellings(Func).GLSL;
 }
 
@@ -3396,11 +3397,6 @@ struct SoftRendPrintingPolicy : ShaderPrintingPolicy<SoftRendPrintingPolicy> {
     OS << " " << FieldName << ";\n";
   }
 
-  static constexpr llvm::StringLiteral GLSLRuntimeSupport{
-      R"(// first line
-//Hello, world!
-)"};
-
   void printStage(raw_ostream &OS, ASTContext &Context,
                   ArrayRef<FunctionRecord> FunctionRecords,
                   ArrayRef<UniformRecord> UniformRecords,
@@ -3411,106 +3407,157 @@ struct SoftRendPrintingPolicy : ShaderPrintingPolicy<SoftRendPrintingPolicy> {
                   unsigned NumColorAttachments, CompoundStmt *Stmts,
                   HshStage Stage, HshStage From, HshStage To,
                   ArrayRef<SampleCall> SampleCalls) override {
-//    OS << "class "
-    OS << GLSLRuntimeSupport;
+    /*
+     *   HshNoStage = -1,
+  HshVertexStage = 0,
+  HshControlStage,
+  HshEvaluationStage,
+  HshGeometryStage,
+  HshFragmentStage,
+  HshMaxStage
+     */
+    switch (Stage) {
+    case HshVertexStage:
+      // Fragment format
+      OS << "struct _fragment_format {\n";
+      OS << "}\n";
+      // Vertex shader
+      OS << "class _vertex: public VertexShader<" << Attributes.front().Name << ", _fragment_format> {\n";
+      Stmts->printPretty(OS, nullptr, *this);
+      OS << "}\n";
+      break;
+    case HshFragmentStage:
+      OS << "class _fragment : public FragmentShader<> {\n";
+      break;
+    case HshGeometryStage:
+      // TODO: throw error
+      OS << "NO_GEOMETRY_SUPPORT";
+      break;
+    case HshEvaluationStage:
+    case HshControlStage:
+    case HshNoStage:
+    default:
+      break;
+    }
 
-//    auto PrintFunction = [&](const FunctionDecl *FD) {
-//      SuppressSpecifiers = false;
-//      FD->getReturnType().print(OS, *this);
-//      OS << ' ';
-//      SuppressSpecifiers = true;
-//      FD->print(OS, *this);
-//    };
-//    bool OldTerseOutput = TerseOutput;
-//    TerseOutput = true;
-//    bool OldSuppressSpecifiers = SuppressSpecifiers;
-//    for (auto &Function : FunctionRecords) {
-//      if ((1u << Stage) & Function.UseStages) {
-//        PrintFunction(Function.Function);
-//        OS << ";\n";
-//      }
-//    }
-//    TerseOutput = false;
-//    for (auto &Function : FunctionRecords) {
-//      if ((1u << Stage) & Function.UseStages) {
-//        PrintFunction(Function.Function);
-//      }
-//    }
-//    TerseOutput = OldTerseOutput;
-//    SuppressSpecifiers = OldSuppressSpecifiers;
-//
-//    NestedRecords.clear();
-//    for (auto &Record : UniformRecords) {
-//      if ((1u << Stage) & Record.UseStages)
-//        GatherNestedPackoffsetFields(Context, Record.Record);
-//    }
-//
-//    PrintNestedStructs(OS, Context);
-//
-//    unsigned Binding = 0;
-//    for (auto &Record : UniformRecords) {
-//      if ((1u << Stage) & Record.UseStages) {
-//        OS << "layout(std140, binding = " << Binding << ") uniform b" << Binding
-//           << '_' << Record.Record->getName() << " {\n";
-//        PrintPackoffsetFields(OS, Context, Record.Record, Record.Name);
-//        OS << "};\n";
-//      }
-//      ++Binding;
-//    }
-//
-//    if (FromRecord && !FromRecord->fields().empty()) {
-//      OS << "in " << HshStageToString(From) << "_to_" << HshStageToString(Stage)
-//         << " {\n";
-//      for (auto *FD : FromRecord->fields()) {
-//        OS << "  ";
-//        FD->print(OS, *this, 1);
-//        OS << ";\n";
-//      }
-//      OS << "} _from_" << HshStageToString(From) << ";\n";
-//    }
-//
-//    if (ToRecord && !ToRecord->fields().empty()) {
-//      OS << "out " << HshStageToString(Stage) << "_to_" << HshStageToString(To)
-//         << " {\n";
-//      for (auto *FD : ToRecord->fields()) {
-//        OS << "  ";
-//        FD->print(OS, *this, 1);
-//        OS << ";\n";
-//      }
-//      OS << "} _to_" << HshStageToString(To) << ";\n";
-//    }
-//
-//    if (Stage == HshVertexStage) {
-//      uint32_t Location = 0;
-//      for (const auto &Attribute : Attributes) {
-//        for (const auto *FD : Attribute.Record->fields()) {
-//          QualType Tp = FD->getType().getUnqualifiedType();
-//          Twine Tw1 = Twine(Attribute.Name) + Twine('_');
-//          PrintAttributeField(OS, Context, Tp, Tw1 + FD->getName(),
-//                              ArrayWaitType::NoArray, 0, Location, 1);
-//        }
-//      }
-//    }
-//
-//    uint32_t TexBinding = 0;
-//    for (const auto &Tex : Textures) {
-//      if ((1u << Stage) & Tex.UseStages)
-//        OS << "layout(binding = " << TexBinding << ") uniform "
-//           << HshBuiltins::getSpelling<SourceTarget>(
-//               BuiltinTypeOfTexture(Tex.Kind))
-//           << " " << Tex.TexParm->getName() << ";\n";
-//      ++TexBinding;
-//    }
-//
-//    if (Stage == HshFragmentStage) {
-//      OS << "layout(location = 0) out vec4 _color_out[" << NumColorAttachments
-//         << "];\n";
-//      if (EarlyDepthStencil)
-//        OS << "layout(early_fragment_tests) in;\n";
-//    }
-//
-//    OS << "void main() ";
-//    Stmts->printPretty(OS, nullptr, *this);
+    //    auto PrintFunction = [&](const FunctionDecl *FD) {
+    //      SuppressSpecifiers = false;
+    //      FD->getReturnType().print(OS, *this);
+    //      OS << ' ';
+    //      SuppressSpecifiers = true;
+    //      FD->print(OS, *this);
+    //    };
+    //    bool OldTerseOutput = TerseOutput;
+    //    TerseOutput = true;
+    //    bool OldSuppressSpecifiers = SuppressSpecifiers;
+    //    for (auto &Function : FunctionRecords) {
+    //      if ((1u << Stage) & Function.UseStages) {
+    //        PrintFunction(Function.Function);
+    //        OS << ";\n";
+    //      }
+    //    }
+    //    TerseOutput = false;
+    //    for (auto &Function : FunctionRecords) {
+    //      if ((1u << Stage) & Function.UseStages) {
+    //        PrintFunction(Function.Function);
+    //      }
+    //    }
+    //    TerseOutput = OldTerseOutput;
+    //    SuppressSpecifiers = OldSuppressSpecifiers;
+    //
+    //    NestedRecords.clear();
+    //    for (auto &Record : UniformRecords) {
+    //      if ((1u << Stage) & Record.UseStages)
+    //        GatherNestedPackoffsetFields(Context, Record.Record);
+    //    }
+    //
+    //    PrintNestedStructs(OS, Context);
+    //
+    //    unsigned Binding = 0;
+    //    for (auto &Record : UniformRecords) {
+    //     if ((1u << Stage) & Record.UseStages) {
+    //       OS << "layout(std140, binding = " << Binding << ") uniform b" <<
+    //       Binding
+    //          << '_' << Record.Record->getName() << " {\n";
+    //       PrintPackoffsetFields(OS, Context, Record.Record, Record.Name);
+    //       OS << "};\n";
+    //     }
+    //     ++Binding;
+    //    }
+    //
+    //    if (FromRecord && !FromRecord->fields().empty()) {
+    //     OS << "in " << HshStageToString(From) << "_to_" <<
+    //     HshStageToString(Stage)
+    //        << " {\n";
+    //     for (auto *FD : FromRecord->fields()) {
+    //       OS << "  ";
+    //       FD->print(OS, *this, 1);
+    //       OS << ";\n";
+    //     }
+    //     OS << "} _from_" << HshStageToString(From) << ";\n";
+    //    }
+    //
+    //    if (ToRecord && !ToRecord->fields().empty()) {
+    //     OS << "out " << HshStageToString(Stage) << "_to_" <<
+    //     HshStageToString(To)
+    //        << " {\n";
+    //     for (auto *FD : ToRecord->fields()) {
+    //       OS << "  ";
+    //       FD->print(OS, *this, 1);
+    //       OS << ";\n";
+    //     }
+    //     OS << "} _to_" << HshStageToString(To) << ";\n";
+    //    }
+    //
+    //    if (Stage == HshVertexStage) {
+    //     uint32_t Location = 0;
+    //     for (const auto &Attribute : Attributes) {
+    //       for (const auto *FD : Attribute.Record->fields()) {
+    //         QualType Tp = FD->getType().getUnqualifiedType();
+    //         Twine Tw1 = Twine(Attribute.Name) + Twine('_');
+    //         PrintAttributeField(OS, Context, Tp, Tw1 + FD->getName(),
+    //                             ArrayWaitType::NoArray, 0, Location, 1);
+    //       }
+    //     }
+    //    }
+    //
+    //    uint32_t TexBinding = 0;
+    //    for (const auto &Tex : Textures) {
+    //     if ((1u << Stage) & Tex.UseStages)
+    //       OS << "layout(binding = " << TexBinding << ") uniform "
+    //          << HshBuiltins::getSpelling<SourceTarget>(
+    //              BuiltinTypeOfTexture(Tex.Kind))
+    //          << " " << Tex.TexParm->getName() << ";\n";
+    //     ++TexBinding;
+    //    }
+    //
+    //    if (Stage == HshFragmentStage) {
+    //     OS << "layout(location = 0) out vec4 _color_out[" <<
+    //     NumColorAttachments
+    //        << "];\n";
+    //     if (EarlyDepthStencil)
+    //       OS << "layout(early_fragment_tests) in;\n";
+    //    }
+    //
+    //    switch(Stage) {
+    //    case HshVertexStage:
+    //      OS << ": public VertexShader<> {\n";
+    //      break;
+    //    case HshFragmentStage:
+    //      OS << ": public VertexShader<> {\n";
+    //      break;
+    //    case HshGeometryStage:
+    //      //TODO: throw error
+    //      OS << "NO_GEOMETRY_SUPPORT";
+    //      break;
+    //    case HshEvaluationStage:
+    //    case HshControlStage:
+    //    case HshNoStage:
+    //    default:
+    //      break;
+    //    }
+    //    Stmts->printPretty(OS, nullptr, *this);
+    //    OS << "}\n";
   }
 
   using ShaderPrintingPolicy<SoftRendPrintingPolicy>::ShaderPrintingPolicy;
@@ -3537,7 +3584,7 @@ MakePrintingPolicy(HshBuiltins &Builtins, HshTarget Target,
                                                 InShaderPipelineArgs);
   case HT_SOFTREND:
     return std::make_unique<SoftRendPrintingPolicy>(Builtins, Target,
-                                                InShaderPipelineArgs);
+                                                    InShaderPipelineArgs);
   }
 }
 
@@ -3789,8 +3836,10 @@ public:
           assert(TextureSearch != Textures.end());
           BindingSearch = SamplerBindings.insert(
               SamplerBindings.end(),
-              SamplerBinding{RecordIdx, static_cast<unsigned int>(TextureSearch - Textures.begin()), PVD,
-                             1u << Stage});
+              SamplerBinding{
+                  RecordIdx,
+                  static_cast<unsigned int>(TextureSearch - Textures.begin()),
+                  PVD, 1u << Stage});
         } else {
           BindingSearch->UseStages |= 1u << Stage;
         }
@@ -3841,8 +3890,8 @@ public:
     auto Format = Builtins.formatOfType(FieldType);
     auto ProcessField = [&]() {
       Offset = Offset.alignTo(FieldAlign);
-      VertexAttributes.push_back(
-          VertexAttribute{static_cast<uint32_t>(Offset.getQuantity()), Binding, Format});
+      VertexAttributes.push_back(VertexAttribute{
+          static_cast<uint32_t>(Offset.getQuantity()), Binding, Format});
       Offset += FieldSize;
     };
     if (HshBuiltins::isMatrixType(HBT)) {
@@ -3881,7 +3930,8 @@ public:
     auto Size = Context.getTypeSizeInChars(Type);
     auto Align = Context.getTypeAlignInChars(Type);
     auto SizeOf = Size.alignTo(Align).getQuantity();
-    VertexBindings.push_back(VertexBinding{Binding, static_cast<uint32_t>(SizeOf), Attribute.Kind});
+    VertexBindings.push_back(
+        VertexBinding{Binding, static_cast<uint32_t>(SizeOf), Attribute.Kind});
     registerAttributeFields(Attribute.Record, Binding);
   }
 
@@ -6367,8 +6417,9 @@ public:
               DataOut.write((const char *)Data.data() + 256, Data.size() - 256);
             }
           } else if (Target == HT_SOFTREND) {
-//            *OS << "class _hshs_" << HashStr << " {";
-            OS->write((const char*)Data.data(), Data.size() - 1);
+            *OS << "namespace _hshs_" << HashStr << " {\n";
+            OS->write((const char *)Data.data(), Data.size() - 1);
+            *OS << "};\n";
           } else {
             *OS << "inline ";
             raw_carray_ostream DataOut(*OS, "_hshs_"s + HashStr);
@@ -7028,10 +7079,6 @@ public:
     }
   };
 };
-
-} // namespace
-
-namespace clang::hshgen {
 
 std::unique_ptr<ASTConsumer>
 GenerateAction::CreateASTConsumer(CompilerInstance &CI, StringRef InFile) {

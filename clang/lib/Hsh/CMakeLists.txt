@@ -120,6 +120,7 @@ add_clang_library(clangHsh
         "${dxc_header}"
         "${uam_library}"
         HshGenerator.cpp
+        Backends/HshSoftRend.cpp
         LINK_LIBS
         clangTooling)
 target_link_libraries(clangHsh PRIVATE "${uam_library}")
